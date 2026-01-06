@@ -86,7 +86,7 @@ end
 
 local is_mount_point = ya.sync(function(state)
 	local dir = cx.active.current.cwd.name
-	local cwd = tostring(cx.active.current.cwd)
+	local cwd = tostring(cx.active.current.cwd.path or cx.active.current.cwd)
 	local mount_root_dir = get_state("global", "mount_root_dir")
 	local match_pattern = "^" .. is_literal_string(mount_root_dir .. "/yazi/fuse-archive") .. "/[^/]+%.tmp%.[^/]+$"
 
@@ -134,7 +134,9 @@ end
 ---@return integer|nil, Output|nil
 local function run_command(cmd, args, _stdin)
 	local cwd = current_dir()
-	cwd = tostring(cwd.scheme and cwd.scheme.is_virtual and Url(cwd.scheme.cache .. tostring(cwd.path)).parent or cwd)
+	cwd = tostring(
+		cwd.scheme and cwd.scheme.is_virtual and Url(cwd.scheme.cache .. tostring(cwd.path)).parent or cwd.path or cwd
+	)
 
 	local stdin = _stdin or Command.PIPED
 	local child, cmd_err =
@@ -518,7 +520,6 @@ return {
 
 		if action == "mount" then
 			local hovered_url, is_dir = current_file()
-			local hovered_url_raw = tostring(hovered_url)
 			if hovered_url == nil then
 				return
 			end
@@ -528,9 +529,11 @@ return {
 				return
 			end
 			local is_virtual = hovered_url.scheme and hovered_url.scheme.is_virtual
-			hovered_url = is_virtual and Url(hovered_url.scheme.cache .. tostring(hovered_url.path)) or hovered_url
+			hovered_url = is_virtual and Url(hovered_url.scheme.cache .. tostring(hovered_url.path))
+				or hovered_url.path
+				or hovered_url
 			if is_virtual and not fs.cha(hovered_url) then
-				ya.emit("download", { hovered_url_raw })
+				ya.emit("download", { tostring(hovered_url) })
 				return
 			end
 			local tmp_fname = tmp_file_name(hovered_url)
@@ -546,7 +549,8 @@ return {
 					mount_options = get_state("global", "mount_options"),
 				})
 				if success then
-					set_state(tmp_fname, "cwd", tostring(current_dir()))
+					local cwd = current_dir()
+					set_state(tmp_fname, "cwd", tostring(cwd.path or cwd))
 					set_state(tmp_fname, "tmp", tostring(tmp_file_url))
 					ya.emit("cd", { tostring(tmp_file_url), raw = true })
 				end
