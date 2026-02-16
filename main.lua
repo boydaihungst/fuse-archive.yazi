@@ -511,6 +511,25 @@ local function setup(_, opts)
 	end)
 end
 
+local unsub_download = ya.sync(function()
+	ps.unsub("download")
+end)
+
+local sub_download = ya.sync(function(_, url)
+	unsub_download()
+	ps.sub("download", function(body)
+		if not body or not body.urls or #body.urls == 0 then
+			return
+		end
+		for _, u in ipairs(body.urls) do
+			if tostring(u) == tostring(url) then
+				ya.emit("plugin", { "fuse-archive", "mount" .. " --url=" .. ya.quote(tostring(u)) })
+				unsub_download()
+			end
+		end
+	end)
+end)
+
 return {
 	entry = function(_, job)
 		local action = job.args[1]
@@ -518,8 +537,12 @@ return {
 			return
 		end
 
+		unsub_download()
 		if action == "mount" then
-			local hovered_url, is_dir = current_file()
+			local hovered_url, is_dir = job.args.url and Url(job.args.url), false
+			if not hovered_url then
+				hovered_url, is_dir = current_file()
+			end
 			if hovered_url == nil then
 				return
 			end
@@ -529,14 +552,15 @@ return {
 				return
 			end
 			local is_virtual = hovered_url.scheme and hovered_url.scheme.is_virtual
-			hovered_url = is_virtual and Url(hovered_url.scheme.cache .. tostring(hovered_url.path))
+			local hovered_url_cached = is_virtual and Url(hovered_url.scheme.cache .. tostring(hovered_url.path))
 				or hovered_url.path
 				or hovered_url
-			if is_virtual and not fs.cha(hovered_url) then
+			if is_virtual and not fs.cha(hovered_url_cached) then
+				sub_download(tostring(hovered_url), job)
 				ya.emit("download", { tostring(hovered_url) })
 				return
 			end
-			local tmp_fname = tmp_file_name(hovered_url)
+			local tmp_fname = tmp_file_name(hovered_url_cached)
 			if not tmp_fname then
 				return
 			end
@@ -544,13 +568,13 @@ return {
 
 			if tmp_file_url then
 				local success = mount_fuse({
-					archive_path = hovered_url,
+					archive_path = hovered_url_cached,
 					fuse_mount_point = tmp_file_url,
 					mount_options = get_state("global", "mount_options"),
 				})
 				if success then
 					local cwd = current_dir()
-					set_state(tmp_fname, "cwd", tostring(cwd.path or cwd))
+					set_state(tmp_fname, "cwd", tostring(cwd))
 					set_state(tmp_fname, "tmp", tostring(tmp_file_url))
 					ya.emit("cd", { tostring(tmp_file_url), raw = true })
 				end
