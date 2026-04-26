@@ -313,6 +313,18 @@ local function mount_fuse(opts)
 		return true
 	end
 	local _mount_opts = tbl_unique_strings({ "auto_unmount", table.unpack(mount_options) })
+	local fuse_version = get_state("global", "fuse-archive-version")
+	if fuse_version and fuse_version >= 1.20 then
+		local blacklisted_opts = { "notrim", "nomerge" }
+		for i = #blacklisted_opts, 1, -1 do
+			for _, opt in ipairs(_mount_opts) do
+				if opt == blacklisted_opts[i] then
+					table.remove(blacklisted_opts, i)
+				end
+			end
+		end
+		_mount_opts = tbl_unique_strings({ table.unpack(blacklisted_opts), table.unpack(_mount_opts) })
+	end
 
 	local res, _ = Command(shell)
 		:arg({
@@ -431,6 +443,16 @@ local function unmount_on_quit()
 	os.execute(unmount_script .. " " .. path_quote(mount_root_dir))
 end
 
+local function fuse_archive_version()
+	local cmd_err_code, res = run_command(shell, { "-c", "fuse-archive --version" })
+	if cmd_err_code or res == nil or res.status.code ~= 0 then
+		error("Cannot read fuse-archive version")
+		return nil
+	end
+	local version = res.stdout:match("%s*fuse%-archive%s*([%d%.]+)")
+	return tonumber(version)
+end
+
 local function setup(_, opts)
 	set_state(
 		"global",
@@ -496,6 +518,7 @@ local function setup(_, opts)
 	end
 	set_state("global", "valid_extensions", SET_ALLOWED_EXTENSIONS)
 
+	ya.emit("plugin", { "fuse-archive", "version" })
 	-- trigger unmount on quit
 	ps.sub("key-quit", function(args)
 		unmount_on_quit()
@@ -590,6 +613,8 @@ return {
 			return
 		elseif action == "unmount" then
 			unmount_on_quit()
+		elseif action == "version" then
+			set_state("global", "fuse-archive-version", fuse_archive_version())
 		end
 	end,
 	setup = setup,
