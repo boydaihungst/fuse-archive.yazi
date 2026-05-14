@@ -524,6 +524,10 @@ local function setup(_, opts)
 		unmount_on_quit()
 		return args
 	end)
+	ps.sub("key-close", function(args)
+		unmount_on_quit()
+		return args
+	end)
 	ps.sub("emit-quit", function(args)
 		unmount_on_quit()
 		return args
