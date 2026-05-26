@@ -525,8 +525,10 @@ local function setup(_, opts)
 		return args
 	end)
 	ps.sub("key-close", function(args)
-		unmount_on_quit()
-		return args
+		if #cx.tabs <= 1 then
+			unmount_on_quit()
+		end
+		return body
 	end)
 	ps.sub("emit-quit", function(args)
 		unmount_on_quit()
