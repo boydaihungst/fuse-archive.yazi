@@ -528,7 +528,7 @@ local function setup(_, opts)
 		if #cx.tabs <= 1 then
 			unmount_on_quit()
 		end
-		return body
+		return args
 	end)
 	ps.sub("emit-quit", function(args)
 		unmount_on_quit()
