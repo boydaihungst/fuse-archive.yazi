@@ -135,8 +135,8 @@ end
 local function run_command(cmd, args, _stdin)
 	local cwd = current_dir()
 	cwd = tostring(
-		((cwd.spec and cwd.spec.is_virtual) or (cwd.scheme and cwd.scheme.is_virtual))
-				and Url(((cwd.spec and cwd.spec.cache) or (cwd.scheme and cwd.scheme.cache)) .. tostring(cwd.path)).parent
+		((cwd.spec and cwd.spec.is_virtual) or (not cwd.spec and cwd.scheme.is_virtual))
+				and Url(((cwd.spec and cwd.spec.cache) or (not cwd.spec and cwd.scheme.cache)) .. tostring(cwd.path)).parent
 			or cwd.path
 			or cwd
 	)
@@ -584,12 +584,12 @@ return {
 				return
 			end
 			local is_virtual = (hovered_url.spec and hovered_url.spec.is_virtual)
-				or (hovered_url.scheme and hovered_url.scheme.is_virtual)
+				or (not hovered_url.spec and hovered_url.scheme.is_virtual)
 			local hovered_url_cached = is_virtual
 					and Url(
 						(
 							(hovered_url.spec and hovered_url.spec.cache)
-							or (hovered_url.scheme and hovered_url.scheme.cache)
+							or (not hovered_url.spec and hovered_url.scheme.cache)
 						) .. tostring(hovered_url.path)
 					)
 				or hovered_url.path
