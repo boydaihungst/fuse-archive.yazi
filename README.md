@@ -91,13 +91,8 @@ This plugin supports MacOS, but you need to install `macfuse` instead of `fuse3`
   - libfuse-dev: This is for FUSE 2.x, the older version.
   - libfuse3-dev: This is for FUSE 3.x, the newer and actively developed version.
     which is recommended by fuse-archive's author.
-
-  ```sh
-  sudo apt install git cmake g++ pkg-config libfuse3-dev libarchive-dev libboost-all-dev xxhash fuse3
-  git clone https://github.com/google/fuse-archive
-  cd "fuse-archive"
-  sudo make install
-  ```
+  
+  https://github.com/google/fuse-archive/blob/main/INSTALL.md
 
 - For Arch based:
 
