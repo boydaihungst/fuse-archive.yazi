@@ -1,4 +1,4 @@
---- @since 25.5.31
+--- @since 26.5.6
 
 local shell = os.getenv("SHELL") or ""
 ---@enum FUSE_ARCHIVE_RETURN_CODE
@@ -159,6 +159,17 @@ local function run_command(cmd, args, _stdin)
 	end
 end
 
+local function run_command_raw(cmd, cwd)
+	if cwd then
+		cmd = string.format('cd "%s" && %s', cwd, cmd)
+	end
+
+	local handle = io.popen(cmd .. " 2>&1")
+	local output = handle:read("*a")
+	local success, exit_type, exit_code = handle:close()
+	return output, success, exit_type, exit_code
+end
+
 local is_mounted = function(dir_path)
 	local cmd_err_code, res = run_command(shell, { "-c", "mountpoint -q " .. path_quote(dir_path) })
 	if cmd_err_code or res == nil or res.status.code ~= 0 then
@@ -278,25 +289,22 @@ end
 
 local redirect_mounted_tab_to_home = ya.sync(function(state, _)
 	local mount_root_dir = get_state("global", "mount_root_dir")
-	local match_pattern = "^" .. is_literal_string(mount_root_dir .. "/yazi/fuse-archive") .. "/[^/]+%.tmp%.[^/]+$"
+	local match_pattern = "^" .. is_literal_string(mount_root_dir .. "/yazi/fuse-archive") .. "/[^/]+%.tmp%..+$"
 	local HOME = os.getenv("HOME")
+	local redirect_tabs = {}
 
 	for _, tab in ipairs(cx.tabs) do
-		local dir = tab.current.cwd.name
 		local cwd = tostring(tab.current.cwd)
-
-		for archive, _ in pairs(state) do
-			if archive == dir and string.match(cwd, match_pattern) then
-				ya.emit("cd", {
-					HOME,
-					tab = (type(tab.id) == "number" or type(tab.id) == "string") and tab.id or tab.id.value,
-					raw = true,
-				})
-				goto continue
-			end
+		if string.match(cwd, match_pattern) then
+			table.insert(redirect_tabs, {
+				HOME,
+				tab = (type(tab.id) == "number" or type(tab.id) == "string") and tab.id or tab.id.value,
+				raw = true,
+			})
+			break
 		end
-		::continue::
 	end
+	return redirect_tabs
 end)
 
 ---mount fuse
@@ -438,12 +446,54 @@ local function tmp_file_name(file_url)
 end
 
 local function unmount_on_quit()
-	redirect_mounted_tab_to_home()
-	local mount_root_dir = get_state("global", "mount_root_dir")
-	local unmount_script =
-		path_quote(os.getenv("HOME") .. "/.config/yazi/plugins/fuse-archive.yazi/assets/unmount_on_quit.sh")
-	os.execute("chmod +x " .. unmount_script)
-	os.execute(unmount_script .. " " .. path_quote(mount_root_dir))
+	ya.async(function()
+		local redirect_tabs = redirect_mounted_tab_to_home()
+		local mount_root_dir = get_state("global", "mount_root_dir")
+		for _, tab in ipairs(redirect_tabs) do
+			ya.exec("cd", tab)
+		end
+		local yazi_instance_count, yazi_instance_count_success, _, _ = run_command_raw("pgrep -c yazi")
+		if not yazi_instance_count_success then
+			error("Cannot check if there is any other yazi instance running")
+			ya.dbg("Cannot check if there is any other yazi instance running")
+			return
+		end
+
+		if yazi_instance_count and yazi_instance_count_success and tonumber(yazi_instance_count) <= 1 then
+			local fuse_archive_mnt_points, fuse_archive_mnt_points_success, _, _ = run_command_raw(
+				"findmnt --output TARGET --noheadings --list | grep '^"
+					.. path_quote(mount_root_dir .. "/yazi/fuse-archive")
+					.. "' | sort -r"
+			)
+
+			if not fuse_archive_mnt_points_success then
+				error("Cannot get fuse-archive mount points to unmount: %s", fuse_archive_mnt_points or "")
+				ya.dbg(
+					string.format("Cannot get fuse-archive mount points to unmount: %s", fuse_archive_mnt_points or "")
+				)
+				return
+			end
+			for mnt_point in fuse_archive_mnt_points:gmatch("[^\r\n]+") do
+				if mnt_point ~= "" then
+					local unmount_result, unmount_result_success, _, _ =
+						run_command_raw("umount -l " .. path_quote(mnt_point))
+
+					if not unmount_result_success then
+						error("Cannot unmount fuse-archive mount point %s: %s", mnt_point, unmount_result or "")
+						ya.dbg(
+							string.format(
+								"Cannot unmount fuse-archive mount point %s: %s",
+								mnt_point,
+								unmount_result or ""
+							)
+						)
+						return
+					end
+				end
+			end
+		end
+		ya.exec("quit", {})
+	end)
 end
 
 local function fuse_archive_version()
@@ -525,21 +575,22 @@ local function setup(_, opts)
 	-- trigger unmount on quit
 	ps.sub("key-quit", function(args)
 		unmount_on_quit()
-		return args
+		return nil
 	end)
 	ps.sub("key-close", function(args)
 		if #cx.tabs <= 1 then
 			unmount_on_quit()
+			return nil
 		end
 		return args
 	end)
 	ps.sub("emit-quit", function(args)
 		unmount_on_quit()
-		return args
+		return nil
 	end)
 	ps.sub("emit-ind-quit", function(args)
 		unmount_on_quit()
-		return args
+		return nil
 	end)
 end
 
@@ -627,8 +678,6 @@ return {
 			local file = current_dir_name()
 			ya.emit("cd", { get_state(file, "cwd"), raw = true })
 			return
-		elseif action == "unmount" then
-			unmount_on_quit()
 		elseif action == "version" then
 			set_state("global", "fuse-archive-version", fuse_archive_version())
 		end
