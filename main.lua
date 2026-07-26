@@ -88,7 +88,7 @@ local is_mount_point = ya.sync(function(state)
 	local dir = cx.active.current.cwd.name
 	local cwd = tostring(cx.active.current.cwd.path or cx.active.current.cwd)
 	local mount_root_dir = get_state("global", "mount_root_dir")
-	local match_pattern = "^" .. is_literal_string(mount_root_dir .. "/yazi/fuse-archive") .. "/[^/]+%.tmp%.[^/]+$"
+	local match_pattern = "^" .. is_literal_string(mount_root_dir) .. "/[^/]+%.tmp%.[^/]+$"
 
 	for archive, _ in pairs(state) do
 		if archive == dir and string.match(cwd, match_pattern) then
@@ -182,8 +182,7 @@ end
 ---Get the fuse mount point
 ---@return string|nil
 local fuse_dir = function()
-	local mount_root_dir = get_state("global", "mount_root_dir")
-	local fuse_mount_point = mount_root_dir .. "/yazi/fuse-archive"
+	local fuse_mount_point = get_state("global", "mount_root_dir")
 	local _, _, exit_code = os.execute("mkdir -p " .. ya.quote(fuse_mount_point))
 	if exit_code ~= 0 then
 		error("Cannot create mount point %s", fuse_mount_point)
@@ -289,7 +288,7 @@ end
 
 local redirect_mounted_tab_to_home = ya.sync(function(state, _)
 	local mount_root_dir = get_state("global", "mount_root_dir")
-	local match_pattern = "^" .. is_literal_string(mount_root_dir .. "/yazi/fuse-archive") .. "/[^/]+%.tmp%..+$"
+	local match_pattern = "^" .. is_literal_string(mount_root_dir) .. "/[^/]+%.tmp%..+$"
 	local HOME = os.getenv("HOME")
 	local redirect_tabs = {}
 
@@ -452,7 +451,8 @@ local function unmount_on_quit()
 		for _, tab in ipairs(redirect_tabs) do
 			ya.exec("cd", tab)
 		end
-		local yazi_instance_count, yazi_instance_count_success, _, _ = run_command_raw("pgrep -c yazi")
+		local yazi_instance_count, yazi_instance_count_success, _, _ =
+			run_command_raw("pgrep -c -x -u " .. ya.user_name() .. " yazi")
 		if not yazi_instance_count_success then
 			error("Cannot check if there is any other yazi instance running")
 			ya.dbg("Cannot check if there is any other yazi instance running")
@@ -461,9 +461,7 @@ local function unmount_on_quit()
 
 		if yazi_instance_count and yazi_instance_count_success and tonumber(yazi_instance_count) <= 1 then
 			local fuse_archive_mnt_points, fuse_archive_mnt_points_success, _, _ = run_command_raw(
-				"findmnt --output TARGET --noheadings --list | grep '^"
-					.. path_quote(mount_root_dir .. "/yazi/fuse-archive")
-					.. "' | sort -r"
+				"findmnt --output TARGET --noheadings --list | grep '^" .. path_quote(mount_root_dir) .. "' | sort -r"
 			)
 
 			if not fuse_archive_mnt_points_success then
@@ -510,11 +508,15 @@ local function setup(_, opts)
 	set_state(
 		"global",
 		"mount_root_dir",
-		opts
+		(
+			opts
 				and opts.mount_root_dir
 				and type(opts.mount_root_dir) == "string"
 				and path_remove_trailing_slash(opts.mount_root_dir)
-			or "/tmp"
+			or "/tmp/yazi/fuse-archive"
+		)
+			.. "/"
+			.. ya.uid()
 	)
 	local fuse = fuse_dir()
 	set_state("global", "fuse_dir", fuse)

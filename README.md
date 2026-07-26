@@ -91,7 +91,7 @@ This plugin supports MacOS, but you need to install `macfuse` instead of `fuse3`
   - libfuse-dev: This is for FUSE 2.x, the older version.
   - libfuse3-dev: This is for FUSE 3.x, the newer and actively developed version.
     which is recommended by fuse-archive's author.
-  
+
   https://github.com/google/fuse-archive/blob/main/INSTALL.md
 
 - For Arch based:
@@ -149,7 +149,7 @@ The plugin supports the following options, which can be assigned during setup:
 4. (optional) `mount_options`: String of mount options to be used when mounting the archive, separated by comma or space.
    List of options: `fuse-archive -h`
 
-5. (optional) `mount_root_dir`: Full path of the directory where you want to mount the archive. Default is `/tmp`.
+5. (optional) `mount_root_dir`: Full path of the directory where you want to mount the archive. Default is `/tmp/yazi/fuse-archive`. A subfolder with the uid will be created under this directory.
 
 ```lua
 require("fuse-archive"):setup({
