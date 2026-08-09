@@ -60,7 +60,7 @@ it will still prompt you to enter a password. You only need to enter the passwor
     - Grandchild_2.zip (with another password)
       - GranGrandchild_3.zip (with another password)
 
-### Support mountoptions
+### Support mount_options
 
 You can use `plugin fuse-archive -- mount` with mount options. Add `mount_options` option to `setup()` function.
 
@@ -68,9 +68,15 @@ You can use `plugin fuse-archive -- mount` with mount options. Add `mount_option
 
 Using `excluded_extensions` option, you can exclude some extensions from mounting.
 
-### Support MacOS
+### Supports MacOS
 
 This plugin supports MacOS, but you need to install `macfuse` instead of `fuse3`.
+
+### Mount directly in virtual file system (VFS) (like sftp or trash folder)
+
+You can mount directly in virtual file system (VFS) like sftp or trash folder.
+In sftp, it will download the file to cache folder, and mount it after downloading finished.
+In trash folder, it will mount the trashed file directly like normal.
 
 ## Requirements
 
@@ -182,6 +188,10 @@ prepend_keymap = [
     { on   = [ "<Left>" ], run = "plugin fuse-archive -- leave", desc = "Leave selected archive without unmount it" },
     { on   = [ "l" ], run = "plugin fuse-archive -- mount", desc = "Enter or Mount selected archive" },
     { on   = [ "h" ], run = "plugin fuse-archive -- leave", desc = "Leave selected archive without unmount it" },
+
+    # add --hide-download-notify to hide "Downloading hovered file, will auto-mount after it's finished"
+    { on   = [ "l" ], run = "plugin fuse-archive -- mount --hide-download-notify", desc = "Enter or Mount selected archive" },
+    { on   = [ "<Right>" ], run = "plugin fuse-archive -- mount --hide-download-notify", desc = "Enter or Mount selected archive" },
 
     # Over quit command for yazi <= v25.5.31 to unmount on quit. For (>=v25.12.29) yazi, you don't need to add these lines.
     { on   = [ "q" ], run = ["plugin fuse-archive -- unmount", "quit"], desc = "Quit the process" },
