@@ -41,11 +41,11 @@ local YA_INPUT_EVENT = {
 }
 
 local function error(s, ...)
-	ya.notify({ title = "fuse-archive", content = string.format(s, ...), timeout = 3, level = "error" })
+	ya.notify({ title = "fuse-archive", content = string.format(s, ...), timeout = 5, level = "error" })
 end
 
 local function info(s, ...)
-	ya.notify({ title = "fuse-archive", content = string.format(s, ...), timeout = 3, level = "info" })
+	ya.notify({ title = "fuse-archive", content = string.format(s, ...), timeout = 5, level = "info" })
 end
 
 local set_state = ya.sync(function(state, archive, key, value)
@@ -98,13 +98,13 @@ local is_mount_point = ya.sync(function(state)
 	return false
 end)
 
----@return Url|nil, boolean|nil
+---@return File|nil, boolean|nil
 local current_file = ya.sync(function()
 	local h = cx.active.current.hovered
 	if not h then
 		return
 	end
-	return h.url, h.cha.is_dir
+	return h, h.cha.is_dir
 end)
 
 local current_dir = ya.sync(function()
@@ -144,20 +144,21 @@ local function run_command(cmd, args, _stdin)
 		)
 	else
 		-- NOTE: yazi > v26.5.6
-		local is_trash = cwd.spec.scheme == "trash"
-		if is_trash then
-			local hovered_file, _ = current_file()
-			if not hovered_file then
-				return Error.other("Cannot find hovered file")
+		local hovered_file, _ = current_file()
+		if cwd.spec.is_virtual then
+			if hovered_file and hovered_file.path and hovered_file.path.parent then
+				cwd = tostring(hovered_file.path.parent)
+			else
+				-- case vfs has no real parent path
+				cwd = tostring(fs.cwd())
 			end
-			local trash_file = require("trash"):provide({ op = "File", url = Url(tostring(hovered_file)) })
-			if not trash_file then
-				return Error.other("Cannot find trashed file")
-			end
-			cwd = tostring(trash_file.path.parent)
 		else
-			cwd = tostring(cwd.spec.is_virtual and fs.cwd() or cwd.path or cwd)
+			cwd = tostring(cwd.path or cwd)
 		end
+	end
+	-- Fall-safe
+	if not fs.cha(Url(cwd)) then
+		cwd = tostring(fs.cwd())
 	end
 
 	local stdin = _stdin or Command.PIPED
@@ -647,11 +648,14 @@ return {
 		-- Cancel any left over handler download
 		unsub_download()
 		if action == "mount" then
+			local hide_download_notify = job.args.hide_download_notify
 			local hovered_url, is_dir = job.args.url and Url(job.args.url), false
+			local hovered_file = hovered_url and fs.file(hovered_url)
 			if not hovered_url then
-				hovered_url, is_dir = current_file()
+				hovered_file, is_dir = current_file()
+				hovered_url = hovered_file.url
 			end
-			if hovered_url == nil then
+			if hovered_file == nil or hovered_url == nil then
 				return
 			end
 			local VALID_EXTENSIONS = get_state("global", "valid_extensions")
@@ -673,21 +677,21 @@ return {
 			else
 				-- NOTE: yazi > v26.5.6
 				is_virtual = hovered_url.spec.is_virtual
-				hovered_url_cached = is_virtual and Url(fs.cwd():join(hovered_url:hash(true)))
-					or hovered_url.path
-					or hovered_url
-
-				local is_trash = hovered_url.spec.scheme == "trash"
-				if is_trash then
-					local trash_file = require("trash"):provide({ op = "File", url = Url(tostring(hovered_url)) })
-					hovered_url_cached = Url(tostring(trash_file.path))
-				end
+				hovered_url_cached = is_virtual and Url(hovered_file.path) or hovered_url.path or hovered_url
 			end
 
 			-- Start download remote file to cache folder
 			if is_virtual and not fs.cha(hovered_url_cached) then
 				sub_download(tostring(hovered_url))
-				ya.exec("download", { tostring(hovered_url) })
+				ya.emit("download", { tostring(hovered_url) })
+				if not hide_download_notify then
+					ya.notify({
+						title = "fuse-archive",
+						content = string.format("Downloading hovered file, will auto-mount after it's finished"),
+						timeout = 5,
+						level = "info",
+					})
+				end
 				return
 			end
 
