@@ -134,12 +134,31 @@ end
 ---@return integer|nil, Output|nil
 local function run_command(cmd, args, _stdin)
 	local cwd = current_dir()
-	cwd = tostring(
-		((cwd.spec and cwd.spec.is_virtual) or (not cwd.spec and cwd.scheme.is_virtual))
-				and Url(((cwd.spec and cwd.spec.cache) or (not cwd.spec and cwd.scheme.cache)) .. tostring(cwd.path)).parent
-			or cwd.path
-			or cwd
-	)
+	if not cwd.spec then
+		-- NOTE: yazi <= v26.5.6
+		cwd = tostring(
+			(cwd.scheme and cwd.scheme.is_virtual)
+					and Url((cwd.scheme and cwd.scheme.cache) .. tostring(cwd.path)).parent
+				or cwd.path
+				or cwd
+		)
+	else
+		-- NOTE: yazi > v26.5.6
+		local is_trash = cwd.spec.scheme == "trash"
+		if is_trash then
+			local hovered_file, _ = current_file()
+			if not hovered_file then
+				return Error.other("Cannot find hovered file")
+			end
+			local trash_file = require("trash"):provide({ op = "File", url = Url(tostring(hovered_file)) })
+			if not trash_file then
+				return Error.other("Cannot find trashed file")
+			end
+			cwd = tostring(trash_file.path.parent)
+		else
+			cwd = tostring(cwd.spec.is_virtual and fs.cwd() or cwd.path or cwd)
+		end
+	end
 
 	local stdin = _stdin or Command.PIPED
 	local child, cmd_err =
@@ -307,10 +326,12 @@ local redirect_mounted_tab_to_home = ya.sync(function(state, _)
 end)
 
 ---mount fuse
----@param opts {archive_path: Url, fuse_mount_point: Url, mount_options: string[], passphrase?: string, max_retry?: integer, retries?: integer}
+---@param opts {archive_path: Url, archive_vfs?: Url, fuse_mount_point: Url, mount_options: string[], passphrase?: string, max_retry?: integer, retries?: integer}
 ---@return boolean
 local function mount_fuse(opts)
 	local archive_path = opts.archive_path
+	local archive_vfs = opts.archive_vfs
+	local archive_ext = opts.archive_vfs and opts.archive_vfs.ext or archive_path.ext
 	local fuse_mount_point = opts.fuse_mount_point
 	local mount_options = opts.mount_options or {}
 	local passphrase = opts.passphrase
@@ -403,7 +424,7 @@ local function mount_fuse(opts)
 		if FUSE_ARCHIVE_MOUNT_ERROR_MSG[fuse_mount_res_code] then
 			if fuse_mount_res_code == FUSE_ARCHIVE_RETURN_CODE.ARCHIVE_READ_PERMISSION_INVALID then
 				if
-					archive_path.ext == "rar"
+					archive_ext == "rar"
 					and fuse_mount_res_msg
 					and fuse_mount_res_msg:find("encrypted data is not currently supported", 1, true)
 				then
@@ -422,6 +443,7 @@ local function mount_fuse(opts)
 	retries = retries + 1
 	return mount_fuse({
 		archive_path = archive_path,
+		archive_vfs = archive_vfs,
 		fuse_mount_point = fuse_mount_point,
 		mount_options = mount_options,
 		passphrase = passphrase,
@@ -433,8 +455,8 @@ end
 ---Mount path using inode (unique for each files)
 ---@param file_url Url
 ---@return string|nil
-local function tmp_file_name(file_url)
-	local fname = file_url.name
+local function tmp_file_name(file_url, file_name)
+	local fname = file_name or file_url.name
 	local cmd_err_code, res = run_command(shell, { "-c", "xxh128sum -q " .. path_quote(file_url) })
 	if cmd_err_code or res == nil or res.status.code ~= 0 then
 		error("Cannot create unique path of file %s", fname)
@@ -600,6 +622,7 @@ local unsub_download = ya.sync(function()
 	ps.unsub("download")
 end)
 
+-- Wait for file to download to cache folder then mount afterwards
 local sub_download = ya.sync(function(_, url)
 	unsub_download()
 	ps.sub("download", function(body)
@@ -614,7 +637,6 @@ local sub_download = ya.sync(function(_, url)
 		end
 	end)
 end)
-
 return {
 	entry = function(_, job)
 		local action = job.args[1]
@@ -622,6 +644,7 @@ return {
 			return
 		end
 
+		-- Cancel any left over handler download
 		unsub_download()
 		if action == "mount" then
 			local hovered_url, is_dir = job.args.url and Url(job.args.url), false
@@ -636,23 +659,39 @@ return {
 				enter(hovered_url, is_dir)
 				return
 			end
-			local is_virtual = (hovered_url.spec and hovered_url.spec.is_virtual)
-				or (not hovered_url.spec and hovered_url.scheme.is_virtual)
-			local hovered_url_cached = is_virtual
-					and Url(
-						(
-							(hovered_url.spec and hovered_url.spec.cache)
-							or (not hovered_url.spec and hovered_url.scheme.cache)
-						) .. tostring(hovered_url.path)
-					)
-				or hovered_url.path
-				or hovered_url
+
+			-- Handle virtual file
+			local is_virtual = false
+			local hovered_url_cached
+			if not hovered_url.spec then
+				-- NOTE: yazi <= v26.5.6
+				is_virtual = hovered_url.scheme and hovered_url.scheme.is_virtual
+				hovered_url_cached = is_virtual
+						and Url((hovered_url.scheme and hovered_url.scheme.cache) .. tostring(hovered_url.path))
+					or hovered_url.path
+					or hovered_url
+			else
+				-- NOTE: yazi > v26.5.6
+				is_virtual = hovered_url.spec.is_virtual
+				hovered_url_cached = is_virtual and Url(fs.cwd():join(hovered_url:hash(true)))
+					or hovered_url.path
+					or hovered_url
+
+				local is_trash = hovered_url.spec.scheme == "trash"
+				if is_trash then
+					local trash_file = require("trash"):provide({ op = "File", url = Url(tostring(hovered_url)) })
+					hovered_url_cached = Url(tostring(trash_file.path))
+				end
+			end
+
+			-- Start download remote file to cache folder
 			if is_virtual and not fs.cha(hovered_url_cached) then
-				sub_download(tostring(hovered_url), job)
-				ya.emit("download", { tostring(hovered_url) })
+				sub_download(tostring(hovered_url))
+				ya.exec("download", { tostring(hovered_url) })
 				return
 			end
-			local tmp_fname = tmp_file_name(hovered_url_cached)
+
+			local tmp_fname = tmp_file_name(hovered_url_cached, hovered_url.name)
 			if not tmp_fname then
 				return
 			end
@@ -661,6 +700,7 @@ return {
 			if tmp_file_url then
 				local success = mount_fuse({
 					archive_path = hovered_url_cached,
+					archive_vfs = hovered_url,
 					fuse_mount_point = tmp_file_url,
 					mount_options = get_state("global", "mount_options"),
 				})
