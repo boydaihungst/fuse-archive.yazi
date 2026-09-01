@@ -1,6 +1,7 @@
 --- @since 26.5.6
 
 local shell = os.getenv("SHELL") or ""
+local tmp_root = os.getenv("TMPDIR") or os.getenv("TEMP") or os.getenv("TMP") or "/tmp"
 ---@enum FUSE_ARCHIVE_RETURN_CODE
 local FUSE_ARCHIVE_RETURN_CODE = {
 	SUCCESS = 0, -- Success.
@@ -536,10 +537,8 @@ local function setup(_, opts)
 				and opts.mount_root_dir
 				and type(opts.mount_root_dir) == "string"
 				and path_remove_trailing_slash(opts.mount_root_dir)
-			or "/tmp/yazi/fuse-archive"
+			or tmp_root .. "/yazi-fuse-archive-" .. ya.uid()
 		)
-			.. "/"
-			.. ya.uid()
 	)
 	local fuse = fuse_dir()
 	set_state("global", "fuse_dir", fuse)

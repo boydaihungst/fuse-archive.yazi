@@ -155,7 +155,9 @@ The plugin supports the following options, which can be assigned during setup:
 4. (optional) `mount_options`: String of mount options to be used when mounting the archive, separated by comma or space.
    List of options: `fuse-archive -h`
 
-5. (optional) `mount_root_dir`: Full path of the directory where you want to mount the archive. Default is `/tmp/yazi/fuse-archive`. A subfolder with the uid will be created under this directory.
+5. (optional) `mount_root_dir`: Full path of the directory where you want to mount the archive.  
+   Default is `(os.getenv("TMPDIR") or os.getenv("TEMP") or os.getenv("TMP") or "/tmp") .. "/yazi-fuse-archive-" .. ya.uid()`.
+   For example: `/tmp/yazi-fuse-archive-1000`
 
 ```lua
 require("fuse-archive"):setup({
@@ -163,7 +165,7 @@ require("fuse-archive"):setup({
   excluded_extensions = { "deb", "apk", "rpm" },
   extra_extensions = { "xyz" },
   mount_options = "nocache,nosymlinks",
-  mount_root_dir = os.getenv("HOME") .. "/abc_folder",
+  mount_root_dir = os.getenv("HOME") .. "/" .. ya.user_name() .. "/fuse-archive", -- => /home/USER_NAME/fuse-archive
 })
 ```
 
