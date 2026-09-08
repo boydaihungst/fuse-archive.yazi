@@ -1,5 +1,14 @@
 # fuse-archive.yazi (Fork)
 
+> [!IMPORTANT]
+> This repository is deprecated  
+> This project is no longer actively maintained,  
+> and there will be no more updates to this repository.  
+> If you've made a fork or a newer, actively maintained version of this project,  
+> feel free to share it in the Issues page.  
+> This way, newcomers can easily find an up-to-date alternative.
+> Forks, improvements, and alternative implementations are always welcome!
+
 <!--toc:start-->
 
 - [fuse-archive.yazi (Fork)](#fuse-archiveyazi-fork)
@@ -37,7 +46,7 @@ mount and unmount the archives manually.
 ## What news with this fork
 
 > [!IMPORTANT]
-> Minimum version: yazi v26.5.6.
+> yazi >= v26.5.6 and <= v26.9.1
 >
 > Password-protected RAR file is not supported yet!
 
